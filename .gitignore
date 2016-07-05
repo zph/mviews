@@ -1,0 +1,4 @@
+**/generated_*.go
+scratch.go
+bin/*
+sql/*

@@ -1,0 +1,131 @@
+package main
+
+/*
+  GENERATED CODE, do not submit patches.
+*/
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+)
+
+/*
+// Add this to results.go and modify it to match appropriate structure
+type {{.Kind}}Result struct {
+	Id             string `db:"entry._id" json:"entry._id"`
+}
+
+// Place the following in sql/{{.Name}}.sql
+// And fill in the SELECT, FROM, and WHERE clauses
+
+--name:rebuild-staging-query
+DROP TABLE IF EXISTS test.{{.Name}}_staging;
+CREATE TABLE test.{{.Name}}_staging AS
+SELECT
+...
+FROM public....
+WHERE
+...
+LIMIT 500;
+
+
+--name:replace-primary-query
+BEGIN;
+DROP TABLE IF EXISTS test.{{.Name}};
+alter table test.{{.Name}}_staging rename to {{.Name}};
+COMMIT;
+
+
+--name:select-primary
+select * from test.{{.Name}};
+
+
+--name:select-secondary
+select * from test.{{.Name}}_staging;
+*/
+
+var {{.LowerKind}} {{.Kind}}
+
+func init(){
+	if refreshChan == nil {
+    refreshChan = make(chan string)
+  }
+	if len(cache) == 0 {
+		cache = map[string]refresher{}
+	}
+	{{.LowerKind}} = new{{.Kind}}()
+
+	cache["{{.Name}}"] = {{.LowerKind}}
+}
+
+type {{.Kind}}Storage struct {
+	data        []{{.Kind}}Result
+	emptyBuffer []{{.Kind}}Result
+}
+
+type {{.Kind}} struct {
+	Query
+	*{{.Kind}}Storage
+}
+
+func new{{.Kind}}() {{.Kind}} {
+	return {{.Kind}}{
+		newQuery(
+			"{{.Name}}",
+			"{{.LookId}}",
+			{{.RefreshInterval}},
+		),
+		&{{.Kind}}Storage{
+			data:        []{{.Kind}}Result{},
+			emptyBuffer: []{{.Kind}}Result{},
+		},
+	}
+}
+
+func (q {{.Kind}}) Reset() { q.data = nil }
+func (q {{.Kind}}) refetchData() error {
+	b := q.emptyBuffer
+
+	err := dbx.Select(&b, q.activeQuery)
+	if err != nil {
+		return err
+	}
+	q.data = b
+	return nil
+}
+
+func (q {{.Kind}}) getData(force bool) error {
+	if len(q.data) == 0 || force {
+		b := q.emptyBuffer
+
+		err := dbx.Select(&b, q.activeQuery)
+		if err != nil {
+			return err
+		}
+		q.data = b
+	}
+	return nil
+}
+
+func (q {{.Kind}}) Handler(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if len(q.data) == 0 {
+		log.Printf("Cache for %s looks empty, filling\n", q.name)
+		b := q.emptyBuffer
+
+		err := dbx.Select(&b, q.activeQuery)
+		if err != nil {
+			s := fmt.Sprintf("DB couldn't execute query %v with err: %v\n", q.activeQuery, err)
+			log.Printf("%q\n", s)
+			fmt.Fprintf(w, `{"error": %q}`, s)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		q.data = b
+	}
+	result, _ := json.Marshal(&q.data)
+	io.WriteString(w, string(result))
+}
